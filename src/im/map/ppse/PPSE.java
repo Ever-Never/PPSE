@@ -15,7 +15,7 @@ import javacard.framework.Util;
 
 /**
  * @author APDU
- *
+ *  https://github.com/APDU/PPSE
  */
 public class PPSE extends Applet {
 	private final static byte INS_INIT_UPDATE        = (byte) 0x50;
@@ -48,6 +48,26 @@ public class PPSE extends Applet {
 		
 		if (selectingApplet()) {
 			{           
+				short length=0;
+				//FCI
+				buf[0]=0x6F;
+				buf[2]=(byte)0x84;
+				buf[3]=JCSystem.getAID().getBytes(buf,(short)4);
+				length=(byte)(buf[3]+4);
+				if(DGI9103 != null)
+				{
+					Util.arrayCopyNonAtomic(DGI9103,(byte)0,buf,(short)length,(short)DGI9103.length);
+					length=(short)(length+DGI9103.length);
+				}
+				else
+				{
+					buf[length] = (byte)0xA5;
+					buf[(short)(length+1)] = 0x00;
+					length +=2;
+				}
+				buf[1]=(byte)(length-2);
+
+				apdu.setOutgoingAndSend((short)0,(short)length);
 				return;
 			}
 			
@@ -61,6 +81,10 @@ public class PPSE extends Applet {
 			break;
 		case (byte) INS_INIT_UPDATE:
 		case (byte) INS_EXT_AUTH:
+			if (isEnd) 
+				ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+		
+			apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, secureChannel.processSecurity(apdu));;
 			break;
 		default:
 			ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
