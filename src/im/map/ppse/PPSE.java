@@ -24,7 +24,7 @@ public class PPSE extends Applet {
     private final static byte INS_STORE_DATA         = (byte) 0xE2;
 	private SecureChannel secureChannel;
 	private boolean isEnd;
-	private byte[] DGI9103;
+	private byte[] DGI9102;
 	public static void install(byte[] bArray, short bOffset, byte bLength) {
 		// GP-compliant JavaCard applet registration
 		new im.map.ppse.PPSE().register(bArray, (short) (bOffset + 1), bArray[bOffset]);
@@ -48,16 +48,16 @@ public class PPSE extends Applet {
 		
 		if (selectingApplet()) {
 			{           
-				short length=0;
+				short length = 0;
 				//FCI
-				buf[0]=0x6F;
-				buf[2]=(byte)0x84;
-				buf[3]=JCSystem.getAID().getBytes(buf,(short)4);
-				length=(byte)(buf[3]+4);
-				if(DGI9103 != null)
+				buf[0] = 0x6F;
+				buf[2] = (byte)0x84;
+				buf[3] = JCSystem.getAID().getBytes(buf,(short)4);
+				length = (byte)(buf[3]+4);
+				if(isEnd)
 				{
-					Util.arrayCopyNonAtomic(DGI9103,(byte)0,buf,(short)length,(short)DGI9103.length);
-					length=(short)(length+DGI9103.length);
+					Util.arrayCopyNonAtomic(DGI9102,(byte)0,buf,(short)length,(short)DGI9102.length);
+					length=(short)(length+DGI9102.length);
 				}
 				else
 				{
@@ -66,7 +66,6 @@ public class PPSE extends Applet {
 					length +=2;
 				}
 				buf[1]=(byte)(length-2);
-
 				apdu.setOutgoingAndSend((short)0,(short)length);
 				return;
 			}
@@ -76,8 +75,28 @@ public class PPSE extends Applet {
 		
 		switch (buf[ISO7816.OFFSET_INS]) {
 		case (byte) INS_SELECT:
+			if( buf[ISO7816.OFFSET_P1]!=4 || buf[ISO7816.OFFSET_P2]!=0 )
+				ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+			else if ( buf[ISO7816.OFFSET_LC]<5 || buf[ISO7816.OFFSET_LC]>16 ) 
+				ISOException.throwIt(ISO7816.SW_WRONG_LENGTH);
+			else				
+				ISOException.throwIt(ISO7816.SW_FILE_NOT_FOUND);
 			break;
 		case (byte) INS_STORE_DATA:
+			if( (buf[ISO7816.OFFSET_P1]&0xFF)!=0x80 || buf[ISO7816.OFFSET_P2]!=0 )
+				ISOException.throwIt(ISO7816.SW_INCORRECT_P1P2);
+		
+			if (isEnd || secureChannel.getSecurityLevel()==SecureChannel.NO_SECURITY_LEVEL) 
+				ISOException.throwIt(ISO7816.SW_CONDITIONS_NOT_SATISFIED);
+			apdu.setIncomingAndReceive();
+			secureChannel.unwrap(buf, (short)0, (short)(buf[ISO7816.OFFSET_LC]+5));
+			if (Util.getShort(buf,ISO7816.OFFSET_CDATA) != (short)0x9102) 
+				ISOException.throwIt(ISO7816.SW_WRONG_DATA);
+			else {
+				DGI9102 = new byte[buf[ISO7816.OFFSET_LC]];
+				Util.arrayCopyNonAtomic(buf, (short)8, DGI9102, (short)0, buf[ISO7816.OFFSET_LC]);
+				isEnd = true;
+			}
 			break;
 		case (byte) INS_INIT_UPDATE:
 		case (byte) INS_EXT_AUTH:
@@ -86,6 +105,13 @@ public class PPSE extends Applet {
 		
 			apdu.setOutgoingAndSend(ISO7816.OFFSET_CDATA, secureChannel.processSecurity(apdu));;
 			break;
+			
+		/*	
+		case (byte) 0xB0: //DEBUG COMMANDS
+			Util.arrayCopyNonAtomic(DGI9102, (short)0, buf, (short)0, (short)DGI9102.length);
+			apdu.setOutgoingAndSend((short)0, (short)DGI9102.length);
+			break;
+		*/
 		default:
 			ISOException.throwIt(ISO7816.SW_INS_NOT_SUPPORTED);
 		}
